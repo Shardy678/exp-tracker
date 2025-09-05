@@ -1,0 +1,34 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: expense_user
+      POSTGRES_PASSWORD: supersecret
+      POSTGRES_DB: finance
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U expense_user -d finance"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  app:
+    build: .
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: finance
+      POSTGRES_USER: expense_user
+      POSTGRES_PASSWORD: supersecret
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./:/app
+
+volumes:
+  pgdata:
