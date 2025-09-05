@@ -108,6 +108,32 @@ def main():
                 category = st.text_input("Category")
 
             account = st.text_input("Account", value="Cash")
+        
+        with col3:
+            conn = None
+            total_tx = 0
+            try:
+                conn = get_conn()
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        SELECT COUNT(*)
+                        FROM transactions
+                        WHERE tx_date >= %s
+                        AND tx_date <= %s
+                        """,
+                        (month_start, month_end),
+                    )
+                    total_tx = cur.fetchone()[0] or 0
+            except Exception as e:
+                st.warning(f"Could not fetch transaction count: {e}")
+            finally:
+                if conn:
+                    conn.close()
+            st.metric(
+                label="Total Transactions (This Month)",
+                value=total_tx
+            )
 
 
         if st.button("Add Transaction"):
@@ -132,6 +158,20 @@ def main():
         try:
             df = load_df()
             if not df.empty:
+                # Exclude 'category_id' and 'id' columns if present
+                for col in ['category_id', 'id']:
+                    if col in df.columns:
+                        df = df.drop(columns=[col])
+                # Rename columns for better display
+                rename_map = {
+                    "tx_date": "Date",
+                    "description": "Description",
+                    "amount": "Amount",
+                    "category": "Category",
+                    "account": "Account",
+                    "category_kind": "Type",
+                }
+                df = df.rename(columns=rename_map)
                 st.table(df)
             else:
                 st.info("No transactions found.")
