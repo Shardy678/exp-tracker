@@ -30,13 +30,16 @@ def main():
                     try:
                         conn = get_conn()
                         with conn.cursor() as cur:
-                            cur.execute("""SELECT SUM(t.amount)
-                                            FROM transactions t
-                                            JOIN categories c ON t.category_id = c.id
-                                            WHERE c.kind = 'expense';
-                                            """)
+                            cur.execute("""
+                                SELECT COALESCE(SUM(t.amount), 0)
+                                FROM transactions t
+                                JOIN categories c ON t.category_id = c.id
+                                WHERE c.kind = 'expense'
+                                AND t.tx_date >= %s
+                                AND t.tx_date <= %s
+                            """, (month_start, month_end))
                             total_expenses = cur.fetchone()[0] or 0
-                            st.metric("Total Spent", f"${total_expenses:,.2f}")
+                            st.metric("Total Spent (This Month)", f"${total_expenses:,.2f}")
                     except Exception as e:
                         st.error(f"Error calculating total expenses: {e}")
                     finally:
@@ -63,13 +66,12 @@ def main():
                     except Exception as e:
                         st.warning(f"Could not compute monthly spend: {e}")
 
-                    left = max(0, MONTHLY_BUDGET - spent)
+                    percent = min(100, (spent / MONTHLY_BUDGET) * 100) if MONTHLY_BUDGET > 0 else 0
                     st.metric(
                         label=f"Budget Left (Until {month_end.strftime('%d %b')})",
-                        value=f"${left:,.2f}",
-                        delta=f"Spent ${spent:,.2f}",
-                        delta_color="normal" if left > 0 else "inverse",
+                        value=f"${max(0, MONTHLY_BUDGET - spent):,.2f}",
                     )
+                    st.progress(percent / 100, text=f"{percent:.1f}% of budget spent")
 
 
 
