@@ -3,7 +3,7 @@ import streamlit as st
 from datetime import date
 from typing import Optional, List
 
-from db import get_conn
+from db.conn import get_conn
 
 @st.cache_data(show_spinner=False)
 def load_df(
