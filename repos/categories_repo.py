@@ -21,3 +21,24 @@ def list_all_categories() -> list[dict]:
             cur.execute(sql)
             rows = cur.fetchall()
             return [{"id": row[0], "name": row[1], "kind": row[2]} for row in rows]
+        
+def get_category_id_by_name(name: str, kind: str) -> int | None:
+    sql = "SELECT id FROM categories WHERE name = %s AND kind = %s"
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, (name, kind))
+        row = cur.fetchone()
+        return int(row[0]) if row else None
+
+def get_or_create_category(name: str, kind: str) -> int:
+    insert_sql = "INSERT INTO categories (name, kind) VALUES (%s, %s) ON CONFLICT DO NOTHING"
+    select_sql = "SELECT id FROM categories WHERE name = %s AND kind = %s"
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(insert_sql, (name, kind))
+        cur.execute(select_sql, (name, kind))
+        row = cur.fetchone()
+        if not row:
+            # extremely rare race, try again
+            cur.execute(select_sql, (name, kind))
+            row = cur.fetchone()
+        conn.commit()
+        return int(row[0])

@@ -43,3 +43,12 @@ def insert_transaction(tx_date, description, amount, category_name, account) -> 
     with get_conn() as conn, conn.cursor() as cur:
         cur.execute(sql, (tx_date, description, amount, category_name, account))
         conn.commit()
+
+def insert_transaction_by_category_id(tx_date, description, amount, category_id, account) -> None:
+    sql = """
+        INSERT INTO transactions (tx_date, description, amount, category_id, account)
+        VALUES (%s, %s, %s, %s, %s)
+    """
+    with get_conn() as conn, conn.cursor() as cur:
+        cur.execute(sql, (tx_date, description, amount, category_id, account))
+        conn.commit()
