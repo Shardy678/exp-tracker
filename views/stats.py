@@ -6,6 +6,8 @@ from services.transactions import (
     get_monthly_expenses,          
     get_monthly_transaction_count, 
 )
+import plotly.express as px
+import pandas as pd
 
 def _month_span(any_start: date, any_end: date):
     if any_start > any_end:
@@ -28,7 +30,7 @@ def render_stats(start: date, end: date, monthly_budget: float, category_ids=Non
             return
 
         st.subheader("Summary")
-
+    
         col1, col2, col3 = st.columns(3)
 
         with col1:
@@ -37,12 +39,10 @@ def render_stats(start: date, end: date, monthly_budget: float, category_ids=Non
                 st.metric(f"Total Spent ({_format_daterange(start, end)})", f"${total_spent_filtered:,.2f}")
             except Exception as e:
                 st.error(f"Error calculating total spent: {e}")
-                total_spent_filtered = 0.0
 
         with col2:
             span_start, span_end, months_count = _month_span(start, end)
             total_budget = monthly_budget * months_count
-
             try:
                 spent_unfiltered_span = get_monthly_expenses(span_start, span_end, category_ids=None)
             except Exception as e:
@@ -62,6 +62,61 @@ def render_stats(start: date, end: date, monthly_budget: float, category_ids=Non
                 st.metric(f"Total Transactions ({_format_daterange(start, end)})", total_tx)
             except Exception as e:
                 st.warning(f"Could not fetch transaction count: {e}")
+
+        
+        chart_col1, chart_col2 = st.columns(2)
+        with chart_col1:
+            cat_df = (
+                df[df["category_kind"] == "expense"]
+                .groupby("category", as_index=False)["amount"]
+                .sum()
+                .sort_values("amount", ascending=False)
+            )
+
+            if cat_df.empty:
+                st.info("No expenses found for this period.")
+            else:
+                fig = px.bar(
+                    cat_df,
+                    x="amount",
+                    y="category",
+                    orientation="h",
+                    text="amount",
+                    color="category",
+                    labels={"amount": "Amount Spent", "category": "Category"},
+                    title="Expenses by Category",
+                )
+                fig.update_traces(texttemplate="$%{text:,.2f}", textposition="outside")
+                fig.update_layout(yaxis=dict(autorange="reversed"))  
+                st.plotly_chart(fig, use_container_width=True)
+        
+        with chart_col2:
+            if df.empty:
+                st.info("No data available for the selected period.")
+            else:
+                df["tx_date"] = pd.to_datetime(df["tx_date"], errors="coerce")
+
+                weekly_df = (
+                    df[df["category_kind"] == "expense"]
+                    .groupby(pd.Grouper(key="tx_date", freq="W"))["amount"]
+                    .sum()
+                    .reset_index()
+                    .sort_values("tx_date")
+                )
+
+                if weekly_df.empty:
+                    st.info("No expenses found.")
+                else:
+                    fig = px.line(
+                        weekly_df,
+                        x="tx_date",
+                        y="amount",
+                        labels={"tx_date": "Week", "amount": "Amount Spent"},
+                        title="Weekly Expenses",
+                    )
+                    fig.update_traces(mode="lines+markers", line=dict(width=2))
+                    fig.update_yaxes(tickprefix="$")
+                    st.plotly_chart(fig, use_container_width=True)
 
     except Exception as e:
         st.error(f"Error loading stats: {e}")
