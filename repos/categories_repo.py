@@ -6,3 +6,10 @@ def list_categories_by_kind(kind: str) -> list[str]:
         with conn.cursor() as cur:
             cur.execute(sql, (kind,))
             return [row[0] for row in cur.fetchall()]
+
+def insert_category(name: str, kind: str) -> None:
+    sql = "INSERT INTO categories (name, kind) VALUES (%s, %s) ON CONFLICT DO NOTHING;"
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (name, kind))
+        conn.commit()
