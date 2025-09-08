@@ -1,62 +1,71 @@
-import os
-import psycopg2
+import sqlite3
+from pathlib import Path
+import streamlit as st
 
-DB = dict(
-    dbname=os.getenv("POSTGRES_DB", "finance"),
-    user=os.getenv("POSTGRES_USER","expense_user"),
-    password=os.getenv("POSTGRES_PASSWORD", "supersecret"),
-    host=os.getenv("POSTGRES_HOST", "localhost"),
-    port=int(os.getenv("POSTGRES_PORT", "5432")),
-)
+DB_DEFAULT = "data/finance.db"
 
+@st.cache_resource
 def get_conn():
-    return psycopg2.connect(**DB)
+    db_path = DB_DEFAULT
+    Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON;")
+    return conn
+
 
 def ping():
     try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("SELECT version()")
-                ver = cur.fetchone()[0]
-        return True, ver
+        conn = get_conn()
+        row = conn.execute("SELECT sqlite_version()").fetchone()
+        ver = row[0] if row else "unknown"
+        return True, f"SQLite {ver}"
     except Exception as e:
-        return False, e
+        return False, str(e)
+
 
 def seed():
-    try:
-        with get_conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute("""CREATE TABLE IF NOT EXISTS categories (
-                    id serial PRIMARY KEY,
-                    name text NOT NULL UNIQUE,
-                    kind TEXT NOT NULL
-                    );
-                    """)
-                cur.execute("""CREATE TABLE IF NOT EXISTS transactions (
-                    id serial PRIMARY KEY,
-                    tx_date DATE NOT NULL,
-                    description TEXT,
-                    amount NUMERIC(12,2) NOT NULL,
-                    category_id INTEGER,
-                    account TEXT DEFAULT 'Cash',
-                    created_at TIMESTAMPTZ DEFAULT NOW());
-                """)
-                cur.execute("""CREATE TABLE IF NOT EXISTS accounts (
-                    id SERIAL PRIMARY  KEY,
-                    name TEXT NOT NULL UNIQUE
-                );
-                """
-                )
-                cur.execute("""CREATE INDEX IF NOT EXISTS idx_tx_date ON transactions(tx_date);""")
-                cur.execute("""CREATE INDEX IF NOT EXISTS idx_category_id ON transactions(category_id);""")
-                cur.execute("""INSERT INTO categories (name, kind) VALUES
-                    ('Salary', 'income'),
-                    ('Freelance', 'income'),
-                    ('Food', 'expense'),
-                    ('Rent', 'expense'),
-                    ('Utilities', 'expense'),
-                    ('Entertainment', 'expense')
-                    ON CONFLICT (name) DO NOTHING;
-                """)
-    except Exception as e:
-        raise e
+    conn = get_conn()
+    with conn: 
+        conn.executescript("""
+        PRAGMA foreign_keys = ON;
+
+        CREATE TABLE IF NOT EXISTS categories (
+            id   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            kind TEXT NOT NULL CHECK (kind IN ('expense','income')),
+            UNIQUE(name, kind)
+        );
+
+        CREATE TABLE IF NOT EXISTS transactions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            tx_date     TEXT NOT NULL,                -- 'YYYY-MM-DD'
+            description TEXT NOT NULL DEFAULT '',
+            amount      REAL NOT NULL CHECK (amount >= 0),
+            category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+            account     TEXT NOT NULL DEFAULT 'Cash',
+            created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS accounts (
+            id   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tx_date      ON transactions(tx_date);
+        CREATE INDEX IF NOT EXISTS idx_category_id  ON transactions(category_id);
+        """)
+
+        # Seed defaults (ignore if already present)
+        conn.executemany(
+            "INSERT OR IGNORE INTO categories (name, kind) VALUES (?, ?)",
+            [
+                ("Salary", "income"),
+                ("Freelance", "income"),
+                ("Food", "expense"),
+                ("Rent", "expense"),
+                ("Utilities", "expense"),
+                ("Entertainment", "expense"),
+            ],
+        )
+        conn.execute("INSERT OR IGNORE INTO accounts (name) VALUES (?)", ("Cash",))

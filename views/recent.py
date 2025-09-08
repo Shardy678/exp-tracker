@@ -24,7 +24,7 @@ def _make_excel_friendly(df: pd.DataFrame) -> pd.DataFrame:
         out[col] = out[col].dt.tz_localize(None)
     for col in out.columns:
         if out[col].dtype == "object":
-            conv = pd.to_datetime(out[col], errors="ignore", utc=True)
+            conv = pd.to_datetime(out[col], utc=True)
             if pd.api.types.is_datetime64tz_dtype(conv):
                 out[col] = conv.dt.tz_localize(None)
     return out
