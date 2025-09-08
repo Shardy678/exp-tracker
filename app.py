@@ -9,7 +9,7 @@ from views.recent import render_recent
 from views.filters import sidebar_filters
 
 def main():
-    st.set_page_config(page_title="Hello Expense", page_icon="💸", layout="wide")
+    st.set_page_config(page_title="Expense Tracker", page_icon="💸", layout="wide")
     st.title("💸 Expense Tracker")
     st.caption("Track your expenses and stay on top of your finances.")
 
