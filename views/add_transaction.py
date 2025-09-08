@@ -1,6 +1,7 @@
 import streamlit as st
 from services.categories import get_categories, add_category
 from services.transactions import add_transaction
+from utils.cache import bust_data_cache
 
 def render_add_transaction():
     pending = st.session_state.pop("pending_kind_switch", None)
@@ -44,6 +45,8 @@ def render_add_transaction():
             try:
                 add_transaction(dp, desc, amount, category, account)
                 st.success("Transaction added!")
+                bust_data_cache()
+                st.rerun()
             except Exception as e:
                 st.error(f"Error adding transaction: {e}")
 
