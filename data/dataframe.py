@@ -1,26 +1,35 @@
 import pandas as pd
 import streamlit as st
-from db.conn import get_conn
+from typing import Optional, Sequence, Dict, Any, Tuple, List
+from sqlalchemy import text, bindparam
+from db.conn import get_engine
+
+def _build_filters(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    category_ids: Optional[Sequence[int]] = None,
+) -> Tuple[str, Dict[str, Any], List]:
+    clauses, params, bindparams = [], {}, []
+
+    if start is not None:
+        clauses.append("t.tx_date >= :start")
+        params["start"] = str(start)
+
+    if end is not None:
+        clauses.append("t.tx_date <= :end")
+        params["end"] = str(end)
+
+    if category_ids:
+        clauses.append("t.category_id IN :cids")
+        params["cids"] = [int(c) for c in category_ids]
+        bindparams.append(bindparam("cids", expanding=True))
+
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    return where_sql, params, bindparams
 
 @st.cache_data(ttl=30)
 def load_df(start=None, end=None, category_ids=None, limit: int = 200) -> pd.DataFrame:
-    clauses = []
-    params = []
-
-    if start is not None:
-        clauses.append("t.tx_date >= %s")
-        params.append(str(start)) 
-
-    if end is not None:
-        clauses.append("t.tx_date <= %s")
-        params.append(str(end))
-
-    if category_ids:
-        placeholders = ",".join(["%s"] * len(category_ids))
-        clauses.append(f"t.category_id IN ({placeholders})")
-        params.extend([int(cid) for cid in category_ids])
-
-    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    where_sql, params, bindparams = _build_filters(start, end, category_ids)
 
     sql = f"""
         SELECT
@@ -37,17 +46,15 @@ def load_df(start=None, end=None, category_ids=None, limit: int = 200) -> pd.Dat
         LEFT JOIN categories c ON c.id = t.category_id
         {where_sql}
         ORDER BY t.id DESC
-        LIMIT %s;
+        LIMIT :lim
     """
-    params.append(int(limit))
+    params["lim"] = int(limit)
+    stmt = text(sql).bindparams(*bindparams)
 
-    with get_conn().cursor() as cur:
-        cur.execute(sql, params)
-        rows = cur.fetchall()
-        cols = [desc.name for desc in cur.description]  
+    with get_engine().connect() as conn:
+        rows = conn.execute(stmt, params).mappings().all()
 
-    df = pd.DataFrame(rows, columns=cols)
+    df = pd.DataFrame(rows)
     if not df.empty:
         df["tx_date"] = pd.to_datetime(df["tx_date"], errors="coerce")
-
     return df
