@@ -16,11 +16,7 @@ services:
   app:
     build: .
     environment:
-      POSTGRES_HOST: db
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: finance
-      POSTGRES_USER: expense_user
-      POSTGRES_PASSWORD: supersecret
+      DATABASE_URL: postgresql://expense_user:supersecret@db:5432/finance
     depends_on:
       db:
         condition: service_healthy

@@ -1,62 +1,95 @@
-from typing import Optional, Sequence
+from typing import Optional, Sequence, Tuple, List
 from db.conn import get_conn
 
-def _build_filters(start=None, end=None, category_ids: Optional[Sequence[int]] = None):
+def _build_filters(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    category_ids: Optional[Sequence[int]] = None,
+) -> Tuple[str, List[object]]:
+
     clauses, params = [], []
+
     if start is not None:
-        clauses.append("t.tx_date >= ?")
-        params.append(str(start))
+        clauses.append("t.tx_date >= %s")
+        params.append(str(start)) 
+
     if end is not None:
-        clauses.append("t.tx_date <= ?")
+        clauses.append("t.tx_date <= %s")
         params.append(str(end))
+
     if category_ids:
-        placeholders = ",".join(["?"] * len(category_ids))
+        placeholders = ",".join(["%s"] * len(category_ids))
         clauses.append(f"t.category_id IN ({placeholders})")
-        params.extend(category_ids)
-    where_sql = "WHERE " + " AND ".join(clauses) if clauses else ""
+        params.extend([int(cid) for cid in category_ids])
+
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     return where_sql, params
 
-def sum_expenses_between(start=None, end=None, category_ids: Optional[Sequence[int]] = None) -> float:
+
+def sum_expenses_between(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    category_ids: Optional[Sequence[int]] = None,
+) -> float:
     where_sql, params = _build_filters(start, end, category_ids)
-    # add the kind filter
     where_sql = f"{where_sql} AND c.kind = 'expense'" if where_sql else "WHERE c.kind = 'expense'"
+
     sql = f"""
-        SELECT COALESCE(SUM(t.amount), 0)
+        SELECT COALESCE(SUM(t.amount), 0) AS total
         FROM transactions t
         LEFT JOIN categories c ON t.category_id = c.id
         {where_sql}
     """
-    with get_conn() as conn:
-        row = conn.execute(sql, params).fetchone()
-    return float(row[0] or 0.0)
 
-def count_transactions_between(start=None, end=None, category_ids: Optional[Sequence[int]] = None) -> int:
+    with get_conn().cursor() as cur:
+        cur.execute(sql, params)
+        row = cur.fetchone()
+    total = row["total"] if isinstance(row, dict) else row[0]
+    return float(total or 0.0)
+
+
+def count_transactions_between(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    category_ids: Optional[Sequence[int]] = None,
+) -> int:
     where_sql, params = _build_filters(start, end, category_ids)
-    sql = f"SELECT COUNT(*) FROM transactions t {where_sql}"
-    with get_conn() as conn:
-        row = conn.execute(sql, params).fetchone()
-    return int(row[0] or 0)
+    sql = f"SELECT COUNT(*) AS n FROM transactions t {where_sql}"
+
+    with get_conn().cursor() as cur:
+        cur.execute(sql, params)
+        row = cur.fetchone()
+
+    n = row["n"] if isinstance(row, dict) else row[0]
+    return int(n or 0)
+
 
 def insert_transaction(tx_date, description, amount, category_name, account) -> None:
-    # NOTE: if your categories table has UNIQUE(name, kind) (recommended),
-    # you may want a kind argument here and match on (name, kind).
+
     sql = """
         INSERT INTO transactions (tx_date, description, amount, category_id, account)
         VALUES (
-            ?, ?, ?, 
-            (SELECT id FROM categories WHERE name = ? LIMIT 1),
-            ?
+            %s, %s, %s,
+            (SELECT id FROM categories WHERE name = %s LIMIT 1),
+            %s
         )
     """
-    conn = get_conn()
-    with conn:  # transaction
-        conn.execute(sql, (str(tx_date), description or "", float(amount), category_name, account or "Cash"))
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                sql,
+                (str(tx_date), description or "", float(amount), category_name, account or "Cash"),
+            )
+
 
 def insert_transaction_by_category_id(tx_date, description, amount, category_id, account) -> None:
     sql = """
         INSERT INTO transactions (tx_date, description, amount, category_id, account)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s)
     """
-    conn = get_conn()
-    with conn:
-        conn.execute(sql, (str(tx_date), description or "", float(amount), int(category_id), account or "Cash"))
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                sql,
+                (str(tx_date), description or "", float(amount), int(category_id), account or "Cash"),
+            )

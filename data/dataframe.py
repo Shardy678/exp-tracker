@@ -8,17 +8,19 @@ def load_df(start=None, end=None, category_ids=None, limit: int = 200) -> pd.Dat
     params = []
 
     if start is not None:
-        clauses.append("t.tx_date >= ?")
-        params.append(str(start))
-    if end is not None:
-        clauses.append("t.tx_date <= ?")
-        params.append(str(end))
-    if category_ids:
-        placeholders = ",".join("?" for _ in category_ids)
-        clauses.append(f"t.category_id IN ({placeholders})")
-        params.extend(category_ids)
+        clauses.append("t.tx_date >= %s")
+        params.append(str(start)) 
 
-    where_sql = "WHERE " + " AND ".join(clauses) if clauses else ""
+    if end is not None:
+        clauses.append("t.tx_date <= %s")
+        params.append(str(end))
+
+    if category_ids:
+        placeholders = ",".join(["%s"] * len(category_ids))
+        clauses.append(f"t.category_id IN ({placeholders})")
+        params.extend([int(cid) for cid in category_ids])
+
+    where_sql = f"WHERE {' AND '.join(clauses)}" if clauses else ""
 
     sql = f"""
         SELECT
@@ -35,17 +37,17 @@ def load_df(start=None, end=None, category_ids=None, limit: int = 200) -> pd.Dat
         LEFT JOIN categories c ON c.id = t.category_id
         {where_sql}
         ORDER BY t.id DESC
-        LIMIT ?;
+        LIMIT %s;
     """
-    params.append(limit)
+    params.append(int(limit))
 
-    with get_conn() as conn:
-        cur = conn.execute(sql, params)
+    with get_conn().cursor() as cur:
+        cur.execute(sql, params)
         rows = cur.fetchall()
-        cols = [col[0] for col in cur.description]
+        cols = [desc.name for desc in cur.description]  
 
     df = pd.DataFrame(rows, columns=cols)
     if not df.empty:
-        df["tx_date"] = pd.to_datetime(df["tx_date"], format="%Y-%m-%d", errors="coerce")
+        df["tx_date"] = pd.to_datetime(df["tx_date"], errors="coerce")
 
     return df
