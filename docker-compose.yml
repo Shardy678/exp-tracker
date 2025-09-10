@@ -16,7 +16,7 @@ services:
   app:
     build: .
     environment:
-      DATABASE_URL: postgresql://expense_user:supersecret@db:5432/finance
+      DB_URL: postgresql://expense_user:supersecret@db:5432/finance
     depends_on:
       db:
         condition: service_healthy

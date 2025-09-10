@@ -3,7 +3,7 @@ import streamlit as st
 import psycopg2
 import psycopg2.extras
 
-DB_URL = os.environ["DATABASE_URL"]  
+DB_URL = os.environ["DB_URL"]  
 
 @st.cache_resource
 def get_conn():
